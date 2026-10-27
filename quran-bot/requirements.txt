@@ -1,0 +1,7 @@
+faster-whisper>=1.1
+av<16          # faster-whisper does not work with av 16+ yet
+numpy
+pillow
+scipy
+pypdfium2
+rapidfuzz

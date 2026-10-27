@@ -1,0 +1,9 @@
+{
+  "quran_folder": "E:\\Quran",
+  "output_folder": "E:\\Quran",
+  "whisper_model": "medium",
+  "cpu_threads": 0,
+  "default_window": 12,
+  "printed_offset": 1,
+  "port": 8765
+}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: sans-serif; font-size: 12px; color: #ddd; background: #232323; padding: 10px; margin: 0; }
+  h2 { font-size: 14px; margin: 0 0 8px; }
+  .row { display: flex; align-items: center; margin: 6px 0; }
+  .row label { width: 110px; }
+  .colors div { display: flex; align-items: center; padding: 4px; cursor: pointer; border: 1px solid transparent; border-radius: 4px; }
+  .colors div.on { border-color: #fff; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; margin-right: 8px; }
+  button { margin-top: 10px; padding: 6px 10px; width: 100%; }
+  #status { margin-top: 10px; white-space: pre-wrap; max-height: 260px; overflow-y: auto; background: #1a1a1a; padding: 6px; border-radius: 4px; }
+  .muted { color: #999; }
+  input, select { width: 120px; }
+</style>
+</head>
+<body>
+  <h2>Quran Arabic Bot</h2>
+  <div class="muted">Pehle start_bot.bat chalayein, phir sequence khol kar marker ka rang chunein.</div>
+
+  <button id="refresh">Markers parhein</button>
+  <div class="colors" id="colors"></div>
+
+  <div class="row"><label>Audio track</label><input id="atrack" type="number" value="1" min="1"></div>
+  <div class="row"><label>PNG video track</label><input id="vtrack" type="number" value="3" min="1"></div>
+  <div class="row"><label>PNG rang</label>
+    <select id="png"><option value="white">White</option><option value="black">Black</option></select></div>
+  <div class="row"><label>Timeline par lagayein</label><input id="place" type="checkbox" checked></div>
+  <div class="row"><label>Default lambai (sec)</label><input id="dur" type="number" value="5" min="1"></div>
+
+  <button id="go">Quran PNG banao</button>
+  <div id="status" class="muted">Tayyar.</div>
+  <script src="main.js"></script>
+</body>
+</html>
