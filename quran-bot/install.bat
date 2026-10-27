@@ -27,9 +27,19 @@ set "PY="
 for %%V in (3.12 3.11 3.13 3.10) do (
   if not defined PY py -%%V -c "pass" >nul 2>nul && set "PY=py -%%V"
 )
+rem Python installed without "Add to PATH" still sits in its default folder
+for %%V in (312 311 313 310) do (
+  if not defined PY if exist "%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe" set "PY="%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe""
+  if not defined PY if exist "%ProgramFiles%\Python%%V\python.exe" set "PY="%ProgramFiles%\Python%%V\python.exe""
+)
 if not defined PY python -c "pass" >nul 2>nul && set "PY=python"
 if not defined PY (
-  echo MASLA: Python nahi mila.
+  echo MASLA: Python 3.10-3.13 nahi mila.
+  echo Is computer par yeh Python mile:
+  py -0p
+  where python
+  dir /b "%LOCALAPPDATA%\Programs\Python"
+  echo.
   echo https://www.python.org/downloads/release/python-3129/ se "Windows installer (64-bit)" download karein.
   echo Install ke pehle screen par neeche "Add python.exe to PATH" par tick lagayein.
   exit /b 1
