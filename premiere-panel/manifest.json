@@ -10,7 +10,7 @@
   "manifestVersion": 5,
   "requiredPermissions": {
     "network": {
-      "domains": ["http://127.0.0.1:8765", "http://localhost:8765"]
+      "domains": "all"
     },
     "localFileSystem": "request"
   },

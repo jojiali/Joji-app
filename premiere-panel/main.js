@@ -3,7 +3,7 @@
 // Python bot (quran-bot/server.py), then imports the PNGs and lays them on the timeline.
 const ppro = require("premierepro");
 
-const API = "http://127.0.0.1:8765";
+let API = "http://127.0.0.1:8765";
 const $ = (id) => document.getElementById(id);
 
 let project = null;
@@ -80,10 +80,19 @@ async function audioClips(trackNumber) {
 
 async function startJob() {
   if (chosen === null) return say("Pehle marker ka rang chunein.");
-  try {
-    await fetch(API + "/health");
-  } catch (e) {
-    return say("Bot nahi chal raha. Pehle quran-bot\\start_bot.bat chalayein.");
+  let reason = "";
+  for (const base of ["http://127.0.0.1:8765", "http://localhost:8765"]) {
+    try {
+      await fetch(base + "/health");
+      API = base;
+      reason = "";
+      break;
+    } catch (e) {
+      reason = String(e);
+    }
+  }
+  if (reason) {
+    return say(`Bot se rabta nahi hua. start_bot.bat chal raha ho to Premiere band karke dobara kholein.\n(${reason})`);
   }
   const clips = await audioClips(Number($("atrack").value));
   const items = [];
