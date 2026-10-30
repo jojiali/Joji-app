@@ -42,7 +42,8 @@ class Bot:
     def __init__(self, cfg=None, log=print):
         self.cfg = cfg or load_config()
         self.log = log
-        self.mushaf = Mushaf(self.cfg["quran_folder"], self.cfg.get("printed_offset", 1))
+        self.mushaf = Mushaf(self.cfg["quran_folder"], self.cfg.get("printed_offset", 1),
+                             self.cfg.get("png_scale", 2))
         self.matcher = Matcher(self.mushaf.quran)
         self.whisper = Transcriber(self.cfg.get("whisper_model", "medium"),
                                    self.cfg.get("cpu_threads", 0))

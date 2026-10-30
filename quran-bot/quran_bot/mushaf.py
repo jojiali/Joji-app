@@ -122,13 +122,18 @@ class Book:
                 return f, printed - start
         raise LookupError(f"Mushaf page {printed} kisi Chapter PDF mein nahi mila")
 
-    def render(self, layout_page, dpi=300):
+    def render_gray(self, layout_page, scale=1):
+        """Page as 8-bit gray at 300 dpi × scale (smoothed by the PDF renderer)."""
         f, idx = self.locate(layout_page)
         doc = self.pdfium.PdfDocument(f)
-        img = doc[idx].render(scale=dpi / 72, grayscale=True).to_pil().convert("L")
-        if img.size != (2250, 3150):
-            img = img.resize((2250, 3150), Image.LANCZOS)
-        return np.asarray(img) < INK
+        size = (2250 * scale, 3150 * scale)
+        img = doc[idx].render(scale=300 * scale / 72, grayscale=True).to_pil().convert("L")
+        if img.size != size:
+            img = img.resize(size, Image.LANCZOS)
+        return np.asarray(img)
+
+    def render(self, layout_page):
+        return self.render_gray(layout_page) < INK
 
 
 def _clusters(idx):
@@ -230,7 +235,7 @@ class Page:
         bands = find_bands(ink, frame, n_lines)
         clean = erase_rules(ink, frame, bands)
         x0, x1, y0, y1 = frame
-        m = 8
+        m = 3   # text can run right up to the frame; a wider margin clipped the first letter
         area = np.zeros_like(clean)
         area[y0 + 3:y1 - 3, x0 + m:x1 - m] = clean[y0 + 3:y1 - 3, x0 + m:x1 - m]
         self.labels, n = ndi.label(area, structure=np.ones((3, 3)))
@@ -249,10 +254,12 @@ class Page:
             w, h = xs.stop - xs.start, ys.stop - ys.start
             # bits of the side border cut off at the text-area edge
             touches = xs.start <= ax0 + edge or xs.stop >= ax1 - edge
-            if touches and (sizes[lab] < 900 or h > 0.8 * LINE_PITCH):
+            if touches and (sizes[lab] < (900 if n_lines < 13 else 150) or h > 0.8 * LINE_PITCH):
                 continue
             # frame outlines and leftover pieces of ruled lines
             if h > 1.3 * LINE_PITCH or (w > 60 and h < 14) or (w > 600 and h < 45):
+                continue
+            if h <= 7 and any(abs((ys.start + ys.stop) / 2 - t) <= 9 for t in tops[1:]):
                 continue
             yc = (ys.start + ys.stop) / 2
             num = int(np.searchsorted(tops, yc, side="right"))
@@ -367,26 +374,29 @@ class Page:
 
     # --- cutting -----------------------------------------------------------
     def crop(self, line_num, first_id, last_id):
-        """Ink mask for words first_id..last_id on one line, plus its line-relative top."""
+        """Ink mask for words first_id..last_id on one line, its top-left corner on the
+        page, and its top relative to the line."""
         line = self.lines[line_num]
         i0, i1 = first_id - line.first, last_id - line.first
         xr, xl = line.cuts[i0], line.cuts[i1 + 1]
         pick = [c for c in line.comps if xl <= (c[1] + c[2]) / 2 < xr]
         if not pick:
-            return None, 0
+            return None
         x0 = min(c[1] for c in pick); x1 = max(c[2] for c in pick)
         y0 = min(c[3] for c in pick); y1 = max(c[4] for c in pick)
         sub = self.labels[y0:y1, x0:x1]
         mask = np.isin(sub, [c[0] for c in pick])
-        return mask, y0 - line.top
+        return mask, x0, y0, y0 - line.top
 
 
 class Mushaf:
-    def __init__(self, pdf_folder, printed_offset=1):
+    def __init__(self, pdf_folder, printed_offset=1, scale=2):
         self.quran = Quran()
         self.layout = Layout()
         self.book = Book(pdf_folder, printed_offset)
+        self.scale = scale
         self._page = lru_cache(maxsize=8)(self._load_page)
+        self._gray = lru_cache(maxsize=4)(lambda page: self.book.render_gray(page, self.scale))
 
     def _load_page(self, page):
         return Page(self.book.render(page), self.layout.lines[page], self.quran)
@@ -394,8 +404,19 @@ class Mushaf:
     def where(self, word_id):
         return self.layout.word_line[word_id]
 
+    def _alpha(self, page, mask, x0, y0):
+        """Smooth, high-resolution alpha for a 300 dpi crop mask: the chosen components are
+        found at 300 dpi, the ink itself is taken from a sharper render of the page."""
+        s = self.scale
+        h, w = mask.shape
+        gray = self._gray(page)[y0 * s:(y0 + h) * s, x0 * s:(x0 + w) * s]
+        big = np.kron(mask, np.ones((s, s), dtype=bool))
+        big = ndi.binary_dilation(big, iterations=s + 1)   # keep the soft edge pixels
+        return ((255 - gray.astype(np.int32)) * big).clip(0, 255).astype(np.uint8)
+
     def span_image(self, first_id, last_id, gap=45, pad=30):
-        """One-line ink mask for word ids first..last (may run over lines/pages)."""
+        """One-line alpha image (0-255) for word ids first..last (may run over lines/pages)."""
+        s = self.scale
         pieces = []
         wid = first_id
         while wid <= last_id:
@@ -403,32 +424,35 @@ class Mushaf:
             p = self._page(page)
             line = p.lines[num]
             end = min(last_id, line.last)
-            mask, rel_top = p.crop(num, wid, end)
-            if mask is not None:
-                pieces.append((mask, rel_top))
+            cut = p.crop(num, wid, end)
+            if cut is not None:
+                mask, x0, y0, rel_top = cut
+                pieces.append((self._alpha(page, mask, x0, y0), rel_top * s))
             wid = end + 1
             while wid <= last_id and wid not in self.layout.word_line:
                 wid += 1
         if not pieces:
             raise ValueError("crop khaali aaya")
+        gap, pad = gap * s, pad * s
         top = min(t for _, t in pieces)
-        bottom = max(t + m.shape[0] for m, t in pieces)
-        width = sum(m.shape[1] for m, _ in pieces) + gap * (len(pieces) - 1)
-        canvas = np.zeros((bottom - top + 2 * pad, width + 2 * pad), dtype=bool)
+        bottom = max(t + a.shape[0] for a, t in pieces)
+        width = sum(a.shape[1] for a, _ in pieces) + gap * (len(pieces) - 1)
+        canvas = np.zeros((bottom - top + 2 * pad, width + 2 * pad), dtype=np.uint8)
         x = canvas.shape[1] - pad
-        for m, t in pieces:  # first piece goes on the right
-            x -= m.shape[1]
+        for a, t in pieces:  # first piece goes on the right
+            x -= a.shape[1]
             y = t - top + pad
-            canvas[y:y + m.shape[0], x:x + m.shape[1]] |= m
+            region = canvas[y:y + a.shape[0], x:x + a.shape[1]]
+            np.maximum(region, a, out=region)
             x -= gap
         return canvas
 
 
-def save_png(mask, path, color):
+def save_png(alpha, path, color):
     rgb = (255, 255, 255) if color == "white" else (0, 0, 0)
-    h, w = mask.shape
+    h, w = alpha.shape
     arr = np.zeros((h, w, 4), dtype=np.uint8)
     arr[..., :3] = rgb
-    arr[..., 3] = mask * 255
+    arr[..., 3] = alpha
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(arr, "RGBA").save(path)
